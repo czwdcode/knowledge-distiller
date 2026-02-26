@@ -63,7 +63,6 @@ def get_video_info(url, preferred_languages, config):
     # 添加cookiefile参数（如果需要）
     if 'cookiefile' in config:
         ydl_opts['cookiefile'] = config['cookiefile']
-        print(ydl_opts)
     
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -100,7 +99,7 @@ def get_video_info(url, preferred_languages, config):
 def generate_download_options(config, selected_lang):
     """
     根据配置文件中的全局设置和选择的字幕语言，生成最终的下载选项。
-    核心逻辑：如果有选中的字幕语言，则只下载该语言字幕；如果没有，则下载最佳音质音频。
+    核心逻辑：如果有选中的字幕语言，则只下载该语言字幕；如果没有，则下载最差音质音频。
 
     参数:
         config (dict): 从 load_config() 加载的配置字典。
@@ -133,14 +132,14 @@ def generate_download_options(config, selected_lang):
         })
         print(f"    配置：检测到匹配字幕，将下载 '{selected_lang}' 语言的字幕文件。")
     else:
-        # 无匹配字幕的情况：下载最佳音质音频
+        # 无匹配字幕的情况：下载最差音质音频
         # 注意：音频下载不需要cookiefile参数
         ydl_opts.update({
-            'format': 'worstaudio/worst',      # 选择最佳音质格式
+            'format': 'worstaudio/worst',      # 选择最差音质格式
             'writesubtitles': False,         # 不下载字幕
             'writeautomaticsub': False,
         })
-        print("    配置：未检测到匹配的字幕，将下载最佳音质音频。")
+        print("    配置：未检测到匹配的字幕，将下载最差音质音频。")
 
     return ydl_opts
 
@@ -167,6 +166,58 @@ def download_item(url, ydl_opts):
         print(f"    下载失败 (URL: {url}): {e}")
         return False
     
+def is_collection(url):
+    """
+    判断给定的URL是否为合集
+    包含/favlist或/lists路径的URL视为合集
+    """
+    collection_keywords = ['/favlist', '/lists']
+    
+    # 检查URL是否包含任一合集关键词
+    for keyword in collection_keywords:
+        if keyword in url:
+            return True
+    return False
+
+
+def extract_videos_from_collection(url):
+    """
+    从合集URL中提取所有视频地址
+    """
+    video_urls = []
+    
+    ydl_opts = {
+        'extract_flat': True,
+        'simulate':True,
+        'quiet': True,
+        'no_warnings': False,
+        'ignoreerrors': True,
+    }
+    
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            # 提取合集信息
+            info = ydl.extract_info(url, download=False)
+            print(info)
+            
+            # 检查是否为合集（播放列表）
+            if 'entries' in info:
+                # 遍历合集中的每个条目
+                for entry in info['entries']:
+                    if entry and 'url' in entry:
+                        video_urls.append(entry['url'])
+                    elif entry and 'webpage_url' in entry:
+                        video_urls.append(entry['webpage_url'])
+            elif 'webpage_url' in info:
+                # 如果是单个视频但被识别为合集结构
+                video_urls.append(info['webpage_url'])
+                
+    except Exception as e:
+        print(f"提取合集 '{url}' 时发生错误: {e}")
+        raise
+    
+    return video_urls
+
 def main():
     """
     程序的主函数，协调整个下载流程：
@@ -184,16 +235,30 @@ def main():
     if not target_urls:
         print("配置中未找到 'urls' 列表或列表为空。程序退出。")
         return
-    
+    # 处理URL列表，区分合集和单视频
+    processed_urls = []
+    for url in target_urls:
+        if is_collection(url):  # 判断是否为合集
+            try:
+                video_list = extract_videos_from_collection(url)  # 从合集提取视频列表
+                processed_urls.extend(video_list)
+                print(f"合集 URL '{url}' 已处理，提取到 {len(video_list)} 个视频")
+            except Exception as e:
+                print(f"处理合集 '{url}' 时出错: {e}")
+                continue
+        else:  # 单视频地址
+            processed_urls.append(url)
+
+    # 使用处理后的URL列表继续后续操作
+    print(f"共获取到 {len(processed_urls)} 个待处理视频")
     # 获取用户偏好的语言列表
     preferred_languages = config.get('subtitle_langs', ['en'])
     print(f"偏好语言顺序: {preferred_languages}")
     
-    print(f"开始处理 {len(target_urls)} 个目标URL。")
     
     # 2. 遍历每个URL
-    for idx, url in enumerate(target_urls, 1):
-        print(f"\n[{idx}/{len(target_urls)}] 处理URL: {url}")
+    for idx, url in enumerate(processed_urls, 1):
+        print(f"\n[{idx}/{len(processed_urls)}] 处理URL: {url}")
         
         # 3. 获取视频信息，检测偏好列表中第一个可用的字幕语言
         print(f"  步骤1: 正在获取视频信息并检测字幕(偏好语言: {preferred_languages})...")
