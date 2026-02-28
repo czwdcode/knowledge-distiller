@@ -209,3 +209,8 @@ __marimo__/
 #自定义
 *.srt
 config.json
+*.m4a
+*.aac
+*.wav
+*.mp3
+*.opus
