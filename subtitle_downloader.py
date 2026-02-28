@@ -7,7 +7,8 @@ def load_config(config_path):
     格式：
     {
     "urls": [],
-    "download_path": "./downloads",
+    "audio_path": "./audio",
+    "srt_path": "./srt",
     "cookiefile": "",
     "subtitle_langs": [
         "en",
@@ -109,9 +110,7 @@ def generate_download_options(config, selected_lang):
         dict: 用于 yt_dlp.YoutubeDL() 的选项字典。
     """
     # 1. 设置基础选项（从配置文件读取或使用默认值）
-    filename = os.path.join(config.get('download_path'), config.get('output_template', '%(title)s [%(id)s].%(ext)s'))
     ydl_opts = {
-        'outtmpl': filename,
         'quiet': config.get('quiet', False),
         'no_warnings': config.get('no_warnings', True),
     }
@@ -122,8 +121,9 @@ def generate_download_options(config, selected_lang):
         # 添加cookiefile参数（仅字幕下载需要）
         if 'cookiefile' in config:
             ydl_opts['cookiefile'] = config['cookiefile']
-        
+        filename = os.path.join(config.get('srt_path'), config.get('output_template', '%(title)s [%(id)s].%(ext)s'))
         ydl_opts.update({
+            'outtmpl': filename,
             'writesubtitles': True,          # 写入字幕文件
             'writeautomaticsub': True,       # 写入自动生成的字幕
             'subtitleslangs': [selected_lang],  # 只使用匹配到的语言
@@ -134,7 +134,9 @@ def generate_download_options(config, selected_lang):
     else:
         # 无匹配字幕的情况：下载最差音质音频
         # 注意：音频下载不需要cookiefile参数
+        filename = os.path.join(config.get('audio_path'), config.get('output_template', '%(title)s [%(id)s].%(ext)s'))
         ydl_opts.update({
+            'outtmpl': filename,
             'format': 'worstaudio/worst',      # 选择最差音质格式
             'writesubtitles': False,         # 不下载字幕
             'writeautomaticsub': False,
